@@ -1,0 +1,31 @@
+{
+  "name": "@shrimpwtf/mcp-akiflow",
+  "version": "0.1.0",
+  "description": "MCP server for Akiflow task management",
+  "type": "module",
+  "bin": {
+    "mcp-akiflow": "./build/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "akiflow",
+    "task-management",
+    "productivity"
+  ],
+  "author": "shrimpwtf",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.0",
+    "axios": "^1.8.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0"
+  }
+}
