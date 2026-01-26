@@ -180,6 +180,31 @@ export interface Calendar {
   change_id: number;
 }
 
+// Time Slot types (from /v5/time_slots)
+export interface TimeSlot {
+  id: string;
+  user_id?: number;
+  recurring_id?: string | null;
+  calendar_id: string;
+  label_id?: string | null;
+  section_id?: string | null;
+  status?: string;
+  title: string;
+  description?: string | null;
+  original_start_time?: string | null;
+  start_time: string;
+  end_time: string;
+  start_datetime_tz?: string;
+  recurrence?: string | null;
+  color?: string | null;
+  content?: Record<string, unknown>;
+  global_label_id_updated_at?: string | null;
+  global_created_at?: string;
+  global_updated_at?: string;
+  data?: Record<string, unknown>;
+  deleted_at?: string | null;
+}
+
 // V5 Event types (from /v5/events)
 export interface EventAttendee {
   email: string;
@@ -239,6 +264,7 @@ export class AkiflowClient {
   private readonly TAGS_URL = "https://api.akiflow.com/v5/tags";
   private readonly EVENTS_URL = "https://api.akiflow.com/v5/events";
   private readonly CALENDARS_URL = "https://api.akiflow.com/v5/calendars";
+  private readonly TIME_SLOTS_URL = "https://api.akiflow.com/v5/time_slots";
   private readonly TOKEN_URL = "https://web.akiflow.com/oauth/refreshToken";
 
   private headers = {
@@ -624,5 +650,79 @@ export class AkiflowClient {
       "GET",
       `${this.CALENDARS_URL}?per_page=2500&with_deleted=false`,
     );
+  }
+
+  /**
+   * Get time slots
+   */
+  async getTimeSlots(): Promise<{ data: TimeSlot[] }> {
+    return this.request("GET", `${this.TIME_SLOTS_URL}?limit=2500`);
+  }
+
+  /**
+   * Create a new time slot (uses PATCH with client-side generated UUID)
+   */
+  async createTimeSlot(slot: {
+    title: string;
+    calendar_id: string;
+    start_time: string;
+    end_time: string;
+    label_id?: string | null;
+  }): Promise<TimeSlot[]> {
+    if (!slot.title) {
+      throw new Error("'title' is required for creating a time slot");
+    }
+    if (!slot.calendar_id) {
+      throw new Error("'calendar_id' is required for creating a time slot");
+    }
+    if (!slot.start_time) {
+      throw new Error("'start_time' is required for creating a time slot");
+    }
+    if (!slot.end_time) {
+      throw new Error("'end_time' is required for creating a time slot");
+    }
+
+    const nowISO = new Date().toISOString();
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+    const newSlot = {
+      id: crypto.randomUUID(),
+      title: slot.title,
+      start_time: slot.start_time,
+      end_time: slot.end_time,
+      calendar_id: slot.calendar_id,
+      start_datetime_tz: timezone,
+      status: "confirmed",
+      data: {},
+      recurring_id: null,
+      label_id: slot.label_id ?? null,
+      section_id: null,
+      recurrence: null,
+      global_created_at: nowISO,
+      deleted_at: null,
+      global_updated_at: nowISO,
+      global_label_id_updated_at: null,
+    };
+
+    return this.request("PATCH", this.TIME_SLOTS_URL, [newSlot]);
+  }
+
+  /**
+   * Update time slot(s)
+   */
+  async updateTimeSlots(slots: Partial<TimeSlot>[]): Promise<TimeSlot[]> {
+    for (const slot of slots) {
+      if (!slot.id) {
+        throw new Error("'id' is required for updating a time slot");
+      }
+    }
+    return this.request("PATCH", this.TIME_SLOTS_URL, slots);
+  }
+
+  /**
+   * Update a single time slot
+   */
+  async updateTimeSlot(slot: Partial<TimeSlot>): Promise<TimeSlot[]> {
+    return this.updateTimeSlots([slot]);
   }
 }

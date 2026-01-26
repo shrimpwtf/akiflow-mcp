@@ -13,7 +13,7 @@ import {
   ListResourcesRequestSchema,
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { AkiflowClient, Task, Event } from "./akiflow-client.js";
+import { AkiflowClient, Task, Event, TimeSlot } from "./akiflow-client.js";
 import { z } from "zod";
 
 // Validate environment
@@ -55,6 +55,8 @@ You have access to Akiflow, a task and calendar management system.
 - Update: edit-task with id and fields to change (use null to clear)
 - Get events: get-events with optional calendar_id filter
 - Edit events: edit-event with id and fields to change
+- Add task to time slot: add-task-to-timeslot with task_id and time_slot_id
+- Remove task from time slot: remove-task-from-timeslot with task_id
 
 ### Tips
 - Duration is in minutes
@@ -178,6 +180,33 @@ const EditEventSchema = z.object({
   start_datetime: z.string().optional().describe("Start time (ISO 8601)"),
   end_datetime: z.string().optional().describe("End time (ISO 8601)"),
   all_day: z.boolean().optional(),
+});
+
+const AddTimeSlotSchema = z.object({
+  title: z.string().describe("Time slot title (required)"),
+  calendar_id: z
+    .string()
+    .describe("Calendar UUID to create time slot in (use get-calendars)"),
+  start_time: z.string().describe("Start time (ISO 8601)"),
+  end_time: z.string().describe("End time (ISO 8601)"),
+  label_id: z.string().optional().describe("Project/label UUID (optional)"),
+});
+
+const EditTimeSlotSchema = z.object({
+  id: z.string().describe("Time slot UUID to edit"),
+  title: z.string().optional(),
+  start_time: z.string().optional().describe("Start time (ISO 8601)"),
+  end_time: z.string().optional().describe("End time (ISO 8601)"),
+  label_id: z.string().nullable().optional(),
+});
+
+const AddTaskToTimeSlotSchema = z.object({
+  task_id: z.string().describe("Task UUID to add to time slot"),
+  time_slot_id: z.string().describe("Time slot UUID to add the task to"),
+});
+
+const RemoveTaskFromTimeSlotSchema = z.object({
+  task_id: z.string().describe("Task UUID to remove from its time slot"),
 });
 
 // List resources
@@ -416,6 +445,82 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           all_day: { type: "boolean" },
         },
         required: ["id"],
+      },
+    },
+    {
+      name: "get-time-slots",
+      description:
+        "Get time slots (internal calendar blocks that don't sync to external calendars)",
+      inputSchema: {
+        type: "object",
+        properties: {
+          limit: { type: "number", description: "Max time slots to return" },
+        },
+      },
+    },
+    {
+      name: "add-time-slot",
+      description:
+        "Create a time slot (internal calendar block). Does not sync to external calendars.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Time slot title (required)" },
+          calendar_id: {
+            type: "string",
+            description: "Calendar UUID (use get-calendars)",
+          },
+          start_time: { type: "string", description: "Start time (ISO 8601)" },
+          end_time: { type: "string", description: "End time (ISO 8601)" },
+          label_id: { type: "string", description: "Project/label UUID" },
+        },
+        required: ["title", "calendar_id", "start_time", "end_time"],
+      },
+    },
+    {
+      name: "edit-time-slot",
+      description: "Edit a time slot",
+      inputSchema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Time slot UUID" },
+          title: { type: "string" },
+          start_time: { type: "string", description: "Start time (ISO 8601)" },
+          end_time: { type: "string", description: "End time (ISO 8601)" },
+          label_id: { type: ["string", "null"] },
+        },
+        required: ["id"],
+      },
+    },
+    {
+      name: "add-task-to-timeslot",
+      description:
+        "Add a task to a time slot. Links the task to an existing time slot block on the calendar.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "string", description: "Task UUID to add" },
+          time_slot_id: {
+            type: "string",
+            description: "Time slot UUID to add the task to",
+          },
+        },
+        required: ["task_id", "time_slot_id"],
+      },
+    },
+    {
+      name: "remove-task-from-timeslot",
+      description:
+        "Remove a task from its time slot. Unlinks the task from its associated time slot block.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: {
+            type: "string",
+            description: "Task UUID to remove from its time slot",
+          },
+        },
+        required: ["task_id"],
       },
     },
   ],
@@ -720,6 +825,123 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: "text",
               text: `Event updated: "${result[0]?.title}" (ID: ${params.id})`,
+            },
+          ],
+        };
+      }
+
+      case "get-time-slots": {
+        const { limit } = args as { limit?: number };
+        const response = await client.getTimeSlots();
+
+        let slots = response.data.filter(
+          (s: TimeSlot) => s.deleted_at === null,
+        );
+
+        // Sort by start time
+        slots.sort((a: TimeSlot, b: TimeSlot) => {
+          return a.start_time.localeCompare(b.start_time);
+        });
+
+        if (limit) {
+          slots = slots.slice(0, limit);
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(slots, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "add-time-slot": {
+        const params = AddTimeSlotSchema.parse(args);
+        const result = await client.createTimeSlot({
+          title: params.title,
+          calendar_id: params.calendar_id,
+          start_time: params.start_time,
+          end_time: params.end_time,
+          label_id: params.label_id,
+        });
+        const created = result[0];
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Time slot created: "${created?.title}" (ID: ${created?.id})`,
+            },
+          ],
+        };
+      }
+
+      case "edit-time-slot": {
+        const params = EditTimeSlotSchema.parse(args);
+        const slot: Partial<TimeSlot> = {
+          id: params.id,
+          global_updated_at: new Date().toISOString(),
+        };
+
+        if (params.title !== undefined) slot.title = params.title;
+        if (params.start_time !== undefined)
+          slot.start_time = params.start_time;
+        if (params.end_time !== undefined) slot.end_time = params.end_time;
+        if (params.label_id !== undefined) slot.label_id = params.label_id;
+
+        const result = await client.updateTimeSlot(slot);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Time slot updated: "${result[0]?.title}" (ID: ${params.id})`,
+            },
+          ],
+        };
+      }
+
+      case "add-task-to-timeslot": {
+        const params = AddTaskToTimeSlotSchema.parse(args);
+        const nowISO = new Date().toISOString();
+
+        const task: Task = {
+          id: params.task_id,
+          time_slot_id: params.time_slot_id,
+          global_updated_at: nowISO,
+        };
+
+        const result = await client.updateTask(task);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Task "${result[0]?.title}" added to time slot (ID: ${params.time_slot_id})`,
+            },
+          ],
+        };
+      }
+
+      case "remove-task-from-timeslot": {
+        const params = RemoveTaskFromTimeSlotSchema.parse(args);
+        const nowISO = new Date().toISOString();
+
+        const task: Task = {
+          id: params.task_id,
+          time_slot_id: null,
+          global_updated_at: nowISO,
+        };
+
+        const result = await client.updateTask(task);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Task "${result[0]?.title}" removed from time slot`,
             },
           ],
         };
