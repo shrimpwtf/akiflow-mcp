@@ -158,6 +158,18 @@ const UnscheduleTaskSchema = z.object({
     ),
 });
 
+const AddEventSchema = z.object({
+  title: z.string().describe("Event title (required)"),
+  calendar_id: z
+    .string()
+    .describe("Calendar UUID to create event in (use get-calendars to find)"),
+  start_datetime: z.string().describe("Start time (ISO 8601)"),
+  end_datetime: z.string().describe("End time (ISO 8601)"),
+  description: z.string().optional().describe("Event description"),
+  location: z.string().optional().describe("Event location"),
+  all_day: z.boolean().optional().describe("All-day event (default: false)"),
+});
+
 const EditEventSchema = z.object({
   id: z.string().describe("Event UUID to edit"),
   title: z.string().optional(),
@@ -359,6 +371,30 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: {
         type: "object",
         properties: {},
+      },
+    },
+    {
+      name: "add-event",
+      description:
+        "Create a new calendar event. Syncs to the source calendar (Google, etc.)",
+      inputSchema: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Event title (required)" },
+          calendar_id: {
+            type: "string",
+            description: "Calendar UUID (use get-calendars to find)",
+          },
+          start_datetime: {
+            type: "string",
+            description: "Start time (ISO 8601)",
+          },
+          end_datetime: { type: "string", description: "End time (ISO 8601)" },
+          description: { type: "string", description: "Event description" },
+          location: { type: "string", description: "Event location" },
+          all_day: { type: "boolean", description: "All-day event" },
+        },
+        required: ["title", "calendar_id", "start_datetime", "end_datetime"],
       },
     },
     {
@@ -632,6 +668,29 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: "text",
               text: JSON.stringify(calendars, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "add-event": {
+        const params = AddEventSchema.parse(args);
+        const result = await client.createEvent({
+          title: params.title,
+          calendar_id: params.calendar_id,
+          start_datetime: params.start_datetime,
+          end_datetime: params.end_datetime,
+          description: params.description,
+          location: params.location,
+          all_day: params.all_day,
+        });
+        const created = result[0];
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Event created: "${created?.title}" (ID: ${created?.id})`,
             },
           ],
         };

@@ -517,6 +517,87 @@ export class AkiflowClient {
   }
 
   /**
+   * Create a new event (uses PATCH with client-side generated UUID)
+   */
+  async createEvent(event: {
+    title: string;
+    calendar_id: string;
+    start_datetime: string;
+    end_datetime: string;
+    description?: string | null;
+    location?: string | null;
+    all_day?: boolean;
+    attendees?: EventAttendee[] | null;
+  }): Promise<Event[]> {
+    if (!event.title) {
+      throw new Error("'title' is required for creating an event");
+    }
+    if (!event.calendar_id) {
+      throw new Error("'calendar_id' is required for creating an event");
+    }
+    if (!event.start_datetime) {
+      throw new Error("'start_datetime' is required for creating an event");
+    }
+    if (!event.end_datetime) {
+      throw new Error("'end_datetime' is required for creating an event");
+    }
+
+    const nowISO = new Date().toISOString();
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+    const newEvent = {
+      id: crypto.randomUUID(),
+      origin_id: null,
+      custom_origin_id: null,
+      connector_id: "google",
+      akiflow_account_id: null,
+      origin_account_id: null,
+      recurring_id: null,
+      origin_recurring_id: null,
+      calendar_id: event.calendar_id,
+      origin_calendar_id: null,
+      creator_id: null,
+      organizer_id: null,
+      original_start_time: null,
+      original_start_date: null,
+      start_time: event.start_datetime,
+      end_time: event.end_datetime,
+      start_date: event.all_day ? event.start_datetime.split("T")[0] : null,
+      end_date: event.all_day ? event.end_datetime.split("T")[0] : null,
+      start_datetime_tz: timezone,
+      end_datetime_tz: null,
+      origin_updated_at: null,
+      etag: null,
+      title: event.title,
+      description: event.description ?? null,
+      content: { sendUpdates: "all" },
+      attendees: event.attendees ?? null,
+      recurrence: null,
+      recurrence_exception: false,
+      declined: false,
+      read_only: false,
+      hidden: false,
+      url: null,
+      meeting_status: null,
+      meeting_url: null,
+      meeting_icon: null,
+      meeting_solution: null,
+      color: null,
+      calendar_color: null,
+      task_id: null,
+      time_slot_id: null,
+      status: "confirmed",
+      recurrence_exception_delete: false,
+      deleted_at: null,
+      global_updated_at: nowISO,
+      global_created_at: nowISO,
+      ...(event.location && { location: event.location }),
+    };
+
+    return this.request("PATCH", this.EVENTS_URL, [newEvent]);
+  }
+
+  /**
    * Update event(s)
    */
   async updateEvents(events: Partial<Event>[]): Promise<Event[]> {
