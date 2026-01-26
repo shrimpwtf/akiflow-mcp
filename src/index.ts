@@ -453,12 +453,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (!task.status) task.status = 1;
 
         const result = await client.createTask(task);
+        const created = result[0];
 
         return {
           content: [
             {
               type: "text",
-              text: `Task created: "${result.title}" (ID: ${result.id})`,
+              text: `Task created: "${created?.title}" (ID: ${created?.id})`,
             },
           ],
         };

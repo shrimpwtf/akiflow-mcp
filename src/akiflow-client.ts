@@ -78,15 +78,16 @@ export interface Task {
   origin_id?: string | null;
   origin_account_id?: string | null;
   akiflow_account_id?: string | null;
-  doc?: TaskDoc;
+  doc?: TaskDoc | null;
   calendar_id?: string | null;
   time_slot_id?: string | null;
   links?: TaskLink[];
-  content?: TaskContent;
+  content?: TaskContent | null;
   trashed_at?: string | null;
   plan_unit?: string | null;
   plan_period?: string | null;
-  global_list_id_updated_at?: string;
+  search_text?: string;
+  global_list_id_updated_at?: string | null;
   global_tags_ids_updated_at?: string | null;
   global_created_at?: string;
   global_updated_at?: string;
@@ -376,14 +377,63 @@ export class AkiflowClient {
   }
 
   /**
-   * Create a new task
+   * Create a new task (uses PATCH with client-side generated UUID)
    */
-  async createTask(task: Task): Promise<Task> {
+  async createTask(task: Task): Promise<Task[]> {
     if (!task.title) {
       throw new Error("'title' is required for creating a task");
     }
     this.validateTask(task);
-    return this.request("POST", this.TASKS_URL, task);
+
+    const now = new Date();
+    const nowISO = now.toISOString();
+    const sorting = now.getTime();
+
+    const newTask: Task = {
+      id: crypto.randomUUID(),
+      status: task.status ?? 1,
+      title: task.title,
+      sorting,
+      sorting_label: sorting,
+      duration: task.duration ?? 0,
+      date: task.date ?? null,
+      datetime: task.datetime ?? null,
+      plan_unit: null,
+      plan_period: null,
+      tags_ids: task.tags_ids ?? null,
+      time_slot_id: null,
+      links: [],
+      done: false,
+      done_at: null,
+      datetime_tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      data: {},
+      original_date: null,
+      original_datetime: null,
+      recurring_id: null,
+      recurrence: null,
+      search_text: "",
+      due_date: task.due_date ?? null,
+      calendar_id: null,
+      recurrence_version: null,
+      content: null,
+      origin: null,
+      connector_id: null,
+      origin_id: null,
+      origin_account_id: null,
+      doc: null,
+      trashed_at: null,
+      global_created_at: nowISO,
+      deleted_at: null,
+      global_updated_at: nowISO,
+      global_list_id_updated_at: null,
+      global_tags_ids_updated_at: null,
+      // Optional fields from input
+      ...(task.description && { description: task.description }),
+      ...(task.priority !== undefined && { priority: task.priority }),
+      ...(task.listId && { listId: task.listId }),
+    };
+
+    return this.request("PATCH", this.TASKS_URL, [newTask]);
   }
 
   /**
