@@ -1,11 +1,16 @@
 {
   "name": "@shrimpwtf/mcp-akiflow",
-  "version": "0.1.2",
-  "description": "MCP server for Akiflow task management",
+  "version": "0.2.0",
+  "description": "MCP server for Akiflow task management with Meeting Assistant support",
   "type": "module",
   "bin": {
     "mcp-akiflow": "./build/index.js"
   },
+  "files": [
+    "build",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
@@ -15,7 +20,10 @@
     "mcp",
     "akiflow",
     "task-management",
-    "productivity"
+    "productivity",
+    "meeting-notes",
+    "meeting-assistant",
+    "transcripts"
   ],
   "author": "shrimpwtf",
   "license": "MIT",

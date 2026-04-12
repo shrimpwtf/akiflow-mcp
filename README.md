@@ -1,6 +1,6 @@
 # Akiflow MCP Server
 
-MCP server for Akiflow task management.
+MCP server for Akiflow task management with Meeting Assistant support.
 
 ## Features
 
@@ -9,6 +9,9 @@ MCP server for Akiflow task management.
 - Schedule/unschedule tasks on calendar
 - Mark tasks done
 - List projects and tags
+- **Meeting Assistant**: Get recordings with summaries, transcripts, and action items
+- **Meeting Briefs**: Get pre-meeting research briefs
+- **Action Items → Tasks**: Create Akiflow tasks directly from meeting action items
 - Auto-refreshing authentication
 
 ## Setup
@@ -92,6 +95,31 @@ Get calendar events.
 
 #### `get-calendars`
 Get all calendars with metadata.
+
+### Meeting Assistant
+
+Requires the Meeting Assistant add-on in Akiflow.
+
+#### `get-recordings`
+List meeting recordings.
+- `limit` (number): Max recordings to return
+
+#### `get-recording`
+Get full detail for a single recording including summary, action items, and transcript.
+- `id` (string, required): Recording UUID
+
+#### `get-meeting-briefs`
+List pre-meeting research briefs.
+- `limit` (number): Max briefs to return
+
+#### `get-meeting-brief`
+Get full detail for a single pre-meeting brief.
+- `id` (string, required): Meeting brief UUID
+
+#### `create-task-from-action-item`
+Create an Akiflow task from a meeting recording's action item.
+- `recording_id` (string, required): Recording UUID
+- `action_item_id` (string, required): Action item ID within the recording
 
 ### Organization
 

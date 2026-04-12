@@ -254,6 +254,90 @@ export interface Event {
   change_id?: number;
 }
 
+// Recording types (from aki.akiflow.com/api/v1/recordings)
+export interface TranscriptTimestamp {
+  absolute: string;
+  relative: number;
+}
+
+export interface TranscriptEntry {
+  duration: number;
+  paragraph: string;
+  speakerId: string;
+  speakerName: string;
+  startTimestamp: TranscriptTimestamp;
+  endTimestamp: TranscriptTimestamp;
+}
+
+export interface ActionItem {
+  id: string;
+  title: string;
+  dueDate?: string | null;
+}
+
+export interface RecordingData {
+  title: string;
+  startTime: string;
+  endTime: string;
+  summary?: string | null;
+  transcript?: TranscriptEntry[];
+  actionItems?: ActionItem[];
+}
+
+export interface FeedItem {
+  id: string;
+  userId: number;
+  referenceType: string;
+  referenceId: string;
+  contentUpdatedAt: string;
+  readAt: string | null;
+  archiveAt: string;
+  clearAt: string;
+  lifecycleRules?: Record<string, unknown>;
+  version: number;
+  data: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  etag: string;
+}
+
+export interface Recording {
+  id: string;
+  userId: number;
+  recallEventId: string;
+  originEventId: string;
+  akiflowAccountId: string;
+  botId: string;
+  data: RecordingData;
+  duration: number;
+  trashedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+  etag: string;
+  feedItem: FeedItem;
+}
+
+// Meeting Brief / Research types (from aki.akiflow.com/api/v1/researches)
+export interface MeetingBrief {
+  id: string;
+  userId?: number;
+  originEventId?: string;
+  akiflowAccountId?: string;
+  data?: Record<string, unknown>;
+  feedItem?: FeedItem;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+  etag?: string;
+}
+
+// Paginated response wrapper for aki.akiflow.com endpoints
+export interface AkiPaginatedResponse<T> {
+  data: T[];
+  next_cursor?: string | null;
+}
+
 export class AkiflowClient {
   private refreshToken: string;
   private accessToken: string = "";
@@ -265,6 +349,7 @@ export class AkiflowClient {
   private readonly EVENTS_URL = "https://api.akiflow.com/v5/events";
   private readonly CALENDARS_URL = "https://api.akiflow.com/v5/calendars";
   private readonly TIME_SLOTS_URL = "https://api.akiflow.com/v5/time_slots";
+  private readonly AKI_API_URL = "https://aki.akiflow.com/api/v1";
   private readonly TOKEN_URL = "https://web.akiflow.com/oauth/refreshToken";
 
   private headers = {
@@ -273,7 +358,7 @@ export class AkiflowClient {
     Referer:
       "https://web.akiflow.com/app/stable/29a83ee24d87ff96/static/js/801.chunk.js",
     "Akiflow-Client-Id": "b4edaac3-5dc7-4b20-bf58-de51efc2bec4",
-    "Akiflow-Version": "2.66.3",
+    "Akiflow-Version": "2.71.5",
     "User-Agent":
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
     Accept: "application/json",
@@ -724,5 +809,103 @@ export class AkiflowClient {
    */
   async updateTimeSlot(slot: Partial<TimeSlot>): Promise<TimeSlot[]> {
     return this.updateTimeSlots([slot]);
+  }
+
+  async getRecordings(
+    cursor?: string,
+    perPage: number = 100,
+  ): Promise<AkiPaginatedResponse<Recording>> {
+    const params = new URLSearchParams({ per_page: String(perPage) });
+    if (cursor) params.set("cursor", cursor);
+    return this.request(
+      "GET",
+      `${this.AKI_API_URL}/recordings?${params.toString()}`,
+    );
+  }
+
+  async getAllRecordings(): Promise<Recording[]> {
+    const all: Recording[] = [];
+    let cursor: string | undefined;
+    const seen = new Set<string>();
+
+    for (;;) {
+      const response = await this.getRecordings(cursor);
+      const items = response.data ?? [];
+      all.push(...items);
+
+      cursor = response.next_cursor ?? undefined;
+      if (!cursor || seen.has(cursor)) break;
+      seen.add(cursor);
+    }
+
+    return all;
+  }
+
+  async getRecording(id: string): Promise<{ data: Recording }> {
+    return this.request("GET", `${this.AKI_API_URL}/recordings/${id}`);
+  }
+
+  async getRecordingAudio(id: string): Promise<ArrayBuffer> {
+    await this.ensureToken();
+    const response = await (await import("axios")).default.get(
+      `${this.AKI_API_URL}/recordings/audio/${id}`,
+      { headers: this.headers, responseType: "arraybuffer" },
+    );
+    return response.data;
+  }
+
+  async createTaskFromActionItem(
+    recordingId: string,
+    actionItemId: string,
+  ): Promise<unknown> {
+    return this.request(
+      "POST",
+      `${this.AKI_API_URL}/recordings/createTaskFromActionItem/${recordingId}/${actionItemId}`,
+    );
+  }
+
+  async generateFollowupEmail(
+    recordingId: string,
+    data?: Record<string, unknown>,
+  ): Promise<unknown> {
+    return this.request(
+      "POST",
+      `${this.AKI_API_URL}/recordings/generateFollowupEmail/${recordingId}`,
+      data,
+    );
+  }
+
+  async getMeetingBriefs(
+    cursor?: string,
+    perPage: number = 100,
+  ): Promise<AkiPaginatedResponse<MeetingBrief>> {
+    const params = new URLSearchParams({ per_page: String(perPage) });
+    if (cursor) params.set("cursor", cursor);
+    return this.request(
+      "GET",
+      `${this.AKI_API_URL}/researches?${params.toString()}`,
+    );
+  }
+
+  async getAllMeetingBriefs(): Promise<MeetingBrief[]> {
+    const all: MeetingBrief[] = [];
+    let cursor: string | undefined;
+    const seen = new Set<string>();
+
+    for (;;) {
+      const response = await this.getMeetingBriefs(cursor);
+      const items = response.data ?? [];
+      all.push(...items);
+
+      cursor = response.next_cursor ?? undefined;
+      if (!cursor || seen.has(cursor)) break;
+      seen.add(cursor);
+    }
+
+    return all;
+  }
+
+  async getMeetingBrief(id: string): Promise<{ data: MeetingBrief }> {
+    return this.request("GET", `${this.AKI_API_URL}/researches/${id}`);
   }
 }

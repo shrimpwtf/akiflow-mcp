@@ -13,7 +13,14 @@ import {
   ListResourcesRequestSchema,
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { AkiflowClient, Task, Event, TimeSlot } from "./akiflow-client.js";
+import {
+  AkiflowClient,
+  Task,
+  Event,
+  TimeSlot,
+  Recording,
+  MeetingBrief,
+} from "./akiflow-client.js";
 import { z } from "zod";
 
 // Validate environment
@@ -57,6 +64,13 @@ You have access to Akiflow, a task and calendar management system.
 - Edit events: edit-event with id and fields to change
 - Add task to time slot: add-task-to-timeslot with task_id and time_slot_id
 - Remove task from time slot: remove-task-from-timeslot with task_id
+
+### Meeting Assistant
+- get-recordings: List meeting recordings (transcripts, summaries, action items)
+- get-recording: Get full recording detail by ID (summary, action items, transcript, brief)
+- get-meeting-briefs: List pre-meeting research briefs
+- get-meeting-brief: Get full brief detail by ID
+- create-task-from-action-item: Create Akiflow task from a recording's action item
 
 ### Tips
 - Duration is in minutes
@@ -207,6 +221,29 @@ const AddTaskToTimeSlotSchema = z.object({
 
 const RemoveTaskFromTimeSlotSchema = z.object({
   task_id: z.string().describe("Task UUID to remove from its time slot"),
+});
+
+const GetRecordingsSchema = z.object({
+  limit: z.number().optional().describe("Max recordings to return"),
+});
+
+const GetRecordingSchema = z.object({
+  id: z.string().describe("Recording UUID"),
+});
+
+const GetMeetingBriefsSchema = z.object({
+  limit: z.number().optional().describe("Max briefs to return"),
+});
+
+const GetMeetingBriefSchema = z.object({
+  id: z.string().describe("Meeting brief UUID"),
+});
+
+const CreateTaskFromActionItemSchema = z.object({
+  recording_id: z.string().describe("Recording UUID"),
+  action_item_id: z
+    .string()
+    .describe("Action item ID within the recording"),
 });
 
 // List resources
@@ -521,6 +558,77 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
         },
         required: ["task_id"],
+      },
+    },
+    {
+      name: "get-recordings",
+      description:
+        "List meeting recordings from Meeting Assistant. Each recording has a summary, action items, transcript, and brief.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          limit: {
+            type: "number",
+            description: "Max recordings to return",
+          },
+        },
+      },
+    },
+    {
+      name: "get-recording",
+      description:
+        "Get full detail for a single meeting recording including summary, action items, raw transcript, and brief.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Recording UUID" },
+        },
+        required: ["id"],
+      },
+    },
+    {
+      name: "get-meeting-briefs",
+      description:
+        "List pre-meeting research briefs. Briefs provide background context and attendee info before meetings.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          limit: {
+            type: "number",
+            description: "Max briefs to return",
+          },
+        },
+      },
+    },
+    {
+      name: "get-meeting-brief",
+      description:
+        "Get full detail for a single pre-meeting research brief by ID.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Meeting brief UUID" },
+        },
+        required: ["id"],
+      },
+    },
+    {
+      name: "create-task-from-action-item",
+      description:
+        "Create an Akiflow task from a meeting recording's action item. Bridges meeting action items into your task list.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          recording_id: {
+            type: "string",
+            description: "Recording UUID",
+          },
+          action_item_id: {
+            type: "string",
+            description: "Action item ID within the recording",
+          },
+        },
+        required: ["recording_id", "action_item_id"],
       },
     },
   ],
@@ -942,6 +1050,92 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: "text",
               text: `Task "${result[0]?.title}" removed from time slot`,
+            },
+          ],
+        };
+      }
+
+      case "get-recordings": {
+        const { limit } = GetRecordingsSchema.parse(args);
+        let recordings = await client.getAllRecordings();
+
+        recordings = recordings.filter(
+          (r: Recording) => !r.trashedAt,
+        );
+
+        if (limit) {
+          recordings = recordings.slice(0, limit);
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(recordings, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "get-recording": {
+        const { id } = GetRecordingSchema.parse(args);
+        const response = await client.getRecording(id);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(response.data, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "get-meeting-briefs": {
+        const { limit } = GetMeetingBriefsSchema.parse(args);
+        let briefs = await client.getAllMeetingBriefs();
+
+        if (limit) {
+          briefs = briefs.slice(0, limit);
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(briefs, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "get-meeting-brief": {
+        const { id } = GetMeetingBriefSchema.parse(args);
+        const response = await client.getMeetingBrief(id);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(response.data, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "create-task-from-action-item": {
+        const { recording_id, action_item_id } =
+          CreateTaskFromActionItemSchema.parse(args);
+        const result = await client.createTaskFromActionItem(
+          recording_id,
+          action_item_id,
+        );
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Task created from action item (recording: ${recording_id}, item: ${action_item_id})`,
             },
           ],
         };
