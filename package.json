@@ -1,6 +1,6 @@
 {
   "name": "@shrimpwtf/mcp-akiflow",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "MCP server for Akiflow task management with Meeting Assistant support",
   "type": "module",
   "bin": {

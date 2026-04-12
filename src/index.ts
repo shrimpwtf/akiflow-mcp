@@ -54,6 +54,10 @@ You have access to Akiflow, a task and calendar management system.
 ### Priority
 - -1 = Goal, 1 = High, 2 = Medium, 3 = Low, null = None
 
+### Date Filtering
+- Most list tools accept date_from and date_to (YYYY-MM-DD) to filter by date range
+- Example: get-events with date_from="2026-04-12" date_to="2026-04-12" returns today's events only
+
 ### Common Actions
 - Add task: add-task with title (required)
 - Schedule: schedule-task with id, date, optional datetime/duration
@@ -101,7 +105,33 @@ const GetTasksSchema = z.object({
     .enum(["1", "2", "4", "7", "10"])
     .optional()
     .describe("1=Inbox, 2=Planned, 4=Snoozed, 7=Someday, 10=Scheduled"),
+  date_from: z
+    .string()
+    .optional()
+    .describe("Only tasks on or after this date (YYYY-MM-DD). Compares against task date/datetime."),
+  date_to: z
+    .string()
+    .optional()
+    .describe("Only tasks on or before this date (YYYY-MM-DD). Compares against task date/datetime."),
+  listId: z.string().optional().describe("Filter by project UUID"),
+  priority: z
+    .string()
+    .optional()
+    .describe("Filter by priority: -1=goal, 1=high, 2=medium, 3=low"),
   limit: z.number().optional().describe("Max number of tasks to return"),
+});
+
+const GetEventsSchema = z.object({
+  limit: z.number().optional().describe("Max events to return"),
+  calendar_id: z.string().optional().describe("Filter by calendar ID"),
+  date_from: z
+    .string()
+    .optional()
+    .describe("Only events starting on or after this date (YYYY-MM-DD)"),
+  date_to: z
+    .string()
+    .optional()
+    .describe("Only events starting on or before this date (YYYY-MM-DD)"),
 });
 
 const AddTaskSchema = z.object({
@@ -214,6 +244,18 @@ const EditTimeSlotSchema = z.object({
   label_id: z.string().nullable().optional(),
 });
 
+const GetTimeSlotsSchema = z.object({
+  limit: z.number().optional().describe("Max time slots to return"),
+  date_from: z
+    .string()
+    .optional()
+    .describe("Only time slots starting on or after this date (YYYY-MM-DD)"),
+  date_to: z
+    .string()
+    .optional()
+    .describe("Only time slots starting on or before this date (YYYY-MM-DD)"),
+});
+
 const AddTaskToTimeSlotSchema = z.object({
   task_id: z.string().describe("Task UUID to add to time slot"),
   time_slot_id: z.string().describe("Time slot UUID to add the task to"),
@@ -224,6 +266,14 @@ const RemoveTaskFromTimeSlotSchema = z.object({
 });
 
 const GetRecordingsSchema = z.object({
+  date_from: z
+    .string()
+    .optional()
+    .describe("Only recordings from on or after this date (YYYY-MM-DD)"),
+  date_to: z
+    .string()
+    .optional()
+    .describe("Only recordings from on or before this date (YYYY-MM-DD)"),
   limit: z.number().optional().describe("Max recordings to return"),
 });
 
@@ -232,6 +282,14 @@ const GetRecordingSchema = z.object({
 });
 
 const GetMeetingBriefsSchema = z.object({
+  date_from: z
+    .string()
+    .optional()
+    .describe("Only briefs on or after this date (YYYY-MM-DD)"),
+  date_to: z
+    .string()
+    .optional()
+    .describe("Only briefs on or before this date (YYYY-MM-DD)"),
   limit: z.number().optional().describe("Max briefs to return"),
 });
 
@@ -297,6 +355,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             description:
               "1=Inbox, 2=Planned, 4=Snoozed, 7=Someday, 10=Scheduled",
           },
+          date_from: {
+            type: "string",
+            description:
+              "Only tasks on or after this date (YYYY-MM-DD). Compares against task date/datetime.",
+          },
+          date_to: {
+            type: "string",
+            description:
+              "Only tasks on or before this date (YYYY-MM-DD). Compares against task date/datetime.",
+          },
+          listId: {
+            type: "string",
+            description: "Filter by project UUID",
+          },
+          priority: {
+            type: "string",
+            description: "Filter by priority: -1=goal, 1=high, 2=medium, 3=low",
+          },
           limit: {
             type: "number",
             description: "Max tasks to return",
@@ -318,6 +394,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           calendar_id: {
             type: "string",
             description: "Filter by calendar ID",
+          },
+          date_from: {
+            type: "string",
+            description: "Only events starting on or after this date (YYYY-MM-DD)",
+          },
+          date_to: {
+            type: "string",
+            description: "Only events starting on or before this date (YYYY-MM-DD)",
           },
         },
       },
@@ -492,6 +576,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         type: "object",
         properties: {
           limit: { type: "number", description: "Max time slots to return" },
+          date_from: {
+            type: "string",
+            description:
+              "Only time slots starting on or after this date (YYYY-MM-DD)",
+          },
+          date_to: {
+            type: "string",
+            description:
+              "Only time slots starting on or before this date (YYYY-MM-DD)",
+          },
         },
       },
     },
@@ -567,6 +661,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: {
         type: "object",
         properties: {
+          date_from: {
+            type: "string",
+            description: "Only recordings from on or after this date (YYYY-MM-DD)",
+          },
+          date_to: {
+            type: "string",
+            description: "Only recordings from on or before this date (YYYY-MM-DD)",
+          },
           limit: {
             type: "number",
             description: "Max recordings to return",
@@ -593,6 +695,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: {
         type: "object",
         properties: {
+          date_from: {
+            type: "string",
+            description: "Only briefs on or after this date (YYYY-MM-DD)",
+          },
+          date_to: {
+            type: "string",
+            description: "Only briefs on or before this date (YYYY-MM-DD)",
+          },
           limit: {
             type: "number",
             description: "Max briefs to return",
@@ -641,7 +751,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     switch (name) {
       case "get-tasks": {
-        const { done = false, status, limit } = GetTasksSchema.parse(args);
+        const { done = false, status, date_from, date_to, listId, priority, limit } =
+          GetTasksSchema.parse(args);
         const response = await client.getTasks();
 
         let tasks = response.data.filter(
@@ -654,6 +765,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
         if (status) {
           tasks = tasks.filter((t: Task) => t.status === parseInt(status));
+        }
+        if (date_from) {
+          tasks = tasks.filter((t: Task) => {
+            const d = (t.date || t.datetime || "").substring(0, 10);
+            return d >= date_from;
+          });
+        }
+        if (date_to) {
+          tasks = tasks.filter((t: Task) => {
+            const d = (t.date || t.datetime || "").substring(0, 10);
+            return d && d <= date_to;
+          });
+        }
+        if (listId) {
+          tasks = tasks.filter((t: Task) => t.listId === listId);
+        }
+        if (priority) {
+          tasks = tasks.filter((t: Task) => t.priority === parseInt(priority));
         }
 
         // Sort by date
@@ -837,10 +966,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case "get-events": {
-        const { limit, calendar_id } = args as {
-          limit?: number;
-          calendar_id?: string;
-        };
+        const { limit, calendar_id, date_from, date_to } =
+          GetEventsSchema.parse(args);
         const response = await client.getEvents();
 
         let events = response.data.filter((e: Event) => e.deleted_at === null);
@@ -848,6 +975,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Filter by calendar
         if (calendar_id) {
           events = events.filter((e: Event) => e.calendar_id === calendar_id);
+        }
+        if (date_from) {
+          events = events.filter((e: Event) => {
+            const d = (e.start_datetime || e.start_date || "").substring(0, 10);
+            return d >= date_from;
+          });
+        }
+        if (date_to) {
+          events = events.filter((e: Event) => {
+            const d = (e.start_datetime || e.start_date || "").substring(0, 10);
+            return d && d <= date_to;
+          });
         }
 
         // Sort by start datetime
@@ -939,12 +1078,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case "get-time-slots": {
-        const { limit } = args as { limit?: number };
+        const { limit, date_from, date_to } = GetTimeSlotsSchema.parse(args);
         const response = await client.getTimeSlots();
 
         let slots = response.data.filter(
           (s: TimeSlot) => s.deleted_at === null,
         );
+
+        if (date_from) {
+          slots = slots.filter(
+            (s: TimeSlot) => s.start_time.substring(0, 10) >= date_from,
+          );
+        }
+        if (date_to) {
+          slots = slots.filter(
+            (s: TimeSlot) => s.start_time.substring(0, 10) <= date_to,
+          );
+        }
 
         // Sort by start time
         slots.sort((a: TimeSlot, b: TimeSlot) => {
@@ -1056,12 +1206,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case "get-recordings": {
-        const { limit } = GetRecordingsSchema.parse(args);
+        const { limit, date_from, date_to } = GetRecordingsSchema.parse(args);
         let recordings = await client.getAllRecordings();
 
         recordings = recordings.filter(
           (r: Recording) => !r.trashedAt,
         );
+
+        if (date_from) {
+          recordings = recordings.filter((r: Recording) => {
+            const d = (r.data?.startTime || r.createdAt || "").substring(0, 10);
+            return d >= date_from;
+          });
+        }
+        if (date_to) {
+          recordings = recordings.filter((r: Recording) => {
+            const d = (r.data?.startTime || r.createdAt || "").substring(0, 10);
+            return d && d <= date_to;
+          });
+        }
 
         if (limit) {
           recordings = recordings.slice(0, limit);
@@ -1092,8 +1255,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case "get-meeting-briefs": {
-        const { limit } = GetMeetingBriefsSchema.parse(args);
+        const { limit, date_from, date_to } = GetMeetingBriefsSchema.parse(args);
         let briefs = await client.getAllMeetingBriefs();
+
+        if (date_from) {
+          briefs = briefs.filter((b: MeetingBrief) => {
+            const d = (b.createdAt || "").substring(0, 10);
+            return d >= date_from;
+          });
+        }
+        if (date_to) {
+          briefs = briefs.filter((b: MeetingBrief) => {
+            const d = (b.createdAt || "").substring(0, 10);
+            return d && d <= date_to;
+          });
+        }
 
         if (limit) {
           briefs = briefs.slice(0, limit);
