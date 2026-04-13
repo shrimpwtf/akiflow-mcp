@@ -4,6 +4,11 @@
  */
 
 import axios, { AxiosResponse } from "axios";
+import {
+  SyncStore,
+  type AkiCacheKey,
+  type V5CacheKey,
+} from "./sync-store.js";
 
 export interface TaskDoc {
   parent_task_id?: string | null;
@@ -338,6 +343,14 @@ export interface AkiPaginatedResponse<T> {
   next_cursor?: string | null;
 }
 
+interface V5SyncResponse<T> {
+  success?: boolean;
+  message?: string | null;
+  data: T[];
+  sync_token?: string | null;
+  has_next_page?: boolean;
+}
+
 export class AkiflowClient {
   private refreshToken: string;
   private accessToken: string = "";
@@ -367,6 +380,7 @@ export class AkiflowClient {
 
   public projects: Record<string, Project> = {};
   public tags: Record<string, Tag> = {};
+  private readonly syncStore = new SyncStore();
 
   constructor(refreshToken: string) {
     this.refreshToken = refreshToken;
@@ -446,6 +460,156 @@ export class AkiflowClient {
     }
   }
 
+  private async syncV5Collection<T extends { id?: string }>(
+    key: V5CacheKey,
+    url: string,
+    isDeleted: (item: T) => boolean,
+    extraParams?: Record<string, string>,
+  ): Promise<T[]> {
+    await this.syncStore.init();
+
+    const state = this.syncStore.getV5State<T>(key);
+    let merged: Record<string, T> = { ...state.itemsById };
+
+    const runSync = async (syncToken?: string): Promise<string | null> => {
+      let nextSyncToken: string | null = syncToken ?? null;
+      let pageToken = syncToken;
+      const seen = new Set<string>();
+
+      for (;;) {
+        const params = new URLSearchParams({ limit: "2500", ...(extraParams ?? {}) });
+        if (pageToken) {
+          params.set("sync_token", pageToken);
+        }
+
+        const response = await this.request<V5SyncResponse<T>>(
+          "GET",
+          `${url}?${params.toString()}`,
+        );
+
+        for (const item of response.data ?? []) {
+          const id = item.id;
+          if (!id) continue;
+          if (isDeleted(item)) {
+            delete merged[id];
+          } else {
+            merged[id] = item;
+          }
+        }
+
+        nextSyncToken = response.sync_token ?? nextSyncToken;
+        if (!response.has_next_page || !response.sync_token) {
+          break;
+        }
+        if (seen.has(response.sync_token)) {
+          break;
+        }
+        seen.add(response.sync_token);
+        pageToken = response.sync_token;
+      }
+
+      return nextSyncToken;
+    };
+
+    let syncToken = state.syncToken;
+    try {
+      syncToken = await runSync(state.syncToken ?? undefined);
+    } catch (error: any) {
+      if (state.syncToken && error.response?.status === 400) {
+        merged = {};
+        syncToken = await runSync();
+      } else {
+        throw error;
+      }
+    }
+
+    await this.syncStore.setV5State<T>(key, {
+      itemsById: merged,
+      syncToken,
+      updatedAt: new Date().toISOString(),
+    });
+
+    return Object.values(merged);
+  }
+
+  private async mergeV5Items<T extends { id?: string }>(
+    key: V5CacheKey,
+    items: T[],
+    isDeleted: (item: T) => boolean,
+  ): Promise<void> {
+    await this.syncStore.init();
+    const state = this.syncStore.getV5State<T>(key);
+    const itemsById = { ...state.itemsById };
+
+    for (const item of items) {
+      const id = item.id;
+      if (!id) continue;
+      if (isDeleted(item)) {
+        delete itemsById[id];
+      } else {
+        itemsById[id] = item;
+      }
+    }
+
+    await this.syncStore.setV5State<T>(key, {
+      itemsById,
+      syncToken: state.syncToken,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  private async refreshAkiCollection<T extends { id: string }>(
+    key: AkiCacheKey,
+    fetchPage: (cursor?: string) => Promise<AkiPaginatedResponse<T>>,
+    isDeleted: (item: T) => boolean,
+    maxAgeMs: number = 60_000,
+  ): Promise<T[]> {
+    await this.syncStore.init();
+    const state = this.syncStore.getAkiState<T>(key);
+    const updatedAtMs = state.updatedAt ? Date.parse(state.updatedAt) : 0;
+
+    if (updatedAtMs && Date.now() - updatedAtMs < maxAgeMs) {
+      return Object.values(state.itemsById);
+    }
+
+    const itemsById: Record<string, T> = {};
+    let cursor: string | undefined;
+    const seen = new Set<string>();
+
+    for (;;) {
+      const response = await fetchPage(cursor);
+      for (const item of response.data ?? []) {
+        if (isDeleted(item)) continue;
+        itemsById[item.id] = item;
+      }
+      cursor = response.next_cursor ?? undefined;
+      if (!cursor || seen.has(cursor)) break;
+      seen.add(cursor);
+    }
+
+    await this.syncStore.setAkiState<T>(key, {
+      itemsById,
+      updatedAt: new Date().toISOString(),
+    });
+
+    return Object.values(itemsById);
+  }
+
+  private async mergeAkiItem<T extends { id: string }>(
+    key: AkiCacheKey,
+    item: T,
+  ): Promise<void> {
+    await this.syncStore.init();
+    const state = this.syncStore.getAkiState<T>(key);
+    await this.syncStore.setAkiState<T>(key, {
+      itemsById: {
+        ...state.itemsById,
+        [item.id]: item,
+      },
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
   /**
    * Validate task parameters
    */
@@ -484,7 +648,13 @@ export class AkiflowClient {
    * Get all tasks
    */
   async getTasks(): Promise<{ data: Task[] }> {
-    return this.request("GET", `${this.TASKS_URL}?limit=2500`);
+    return {
+      data: await this.syncV5Collection<Task>(
+        "tasks",
+        this.TASKS_URL,
+        (task) => !!task.deleted_at || !!task.trashed_at,
+      ),
+    };
   }
 
   /**
@@ -544,7 +714,13 @@ export class AkiflowClient {
       ...(task.listId && { listId: task.listId }),
     };
 
-    return this.request("PATCH", this.TASKS_URL, [newTask]);
+    const result = await this.request<Task[]>("PATCH", this.TASKS_URL, [newTask]);
+    await this.mergeV5Items<Task>(
+      "tasks",
+      result,
+      (task) => !!task.deleted_at || !!task.trashed_at,
+    );
+    return result;
   }
 
   /**
@@ -557,7 +733,13 @@ export class AkiflowClient {
       }
       this.validateTask(task);
     }
-    return this.request("PATCH", this.TASKS_URL, tasks);
+    const result = await this.request<Task[]>("PATCH", this.TASKS_URL, tasks);
+    await this.mergeV5Items<Task>(
+      "tasks",
+      result,
+      (task) => !!task.deleted_at || !!task.trashed_at,
+    );
+    return result;
   }
 
   /**
@@ -584,10 +766,13 @@ export class AkiflowClient {
    * Get all projects (labels)
    */
   async getProjects(): Promise<{ data: Project[] }> {
-    const response = await this.request<{ data: Project[] }>(
-      "GET",
-      `${this.PROJECTS_URL}?limit=2500`,
-    );
+    const response = {
+      data: await this.syncV5Collection<Project>(
+        "projects",
+        this.PROJECTS_URL,
+        (project) => !!project.deleted_at,
+      ),
+    };
 
     // Build projects cache
     this.projects = {};
@@ -604,10 +789,13 @@ export class AkiflowClient {
    * Get all tags
    */
   async getTags(): Promise<{ data: Tag[] }> {
-    const response = await this.request<{ data: Tag[] }>(
-      "GET",
-      `${this.TAGS_URL}?limit=2500`,
-    );
+    const response = {
+      data: await this.syncV5Collection<Tag>(
+        "tags",
+        this.TAGS_URL,
+        (tag) => !!tag.deleted_at,
+      ),
+    };
 
     // Build tags cache
     this.tags = {};
@@ -624,7 +812,13 @@ export class AkiflowClient {
    * Get calendar events (v5)
    */
   async getEvents(): Promise<{ data: Event[] }> {
-    return this.request("GET", `${this.EVENTS_URL}?per_page=2500`);
+    return {
+      data: await this.syncV5Collection<Event>(
+        "events",
+        this.EVENTS_URL,
+        (event) => !!event.deleted_at,
+      ),
+    };
   }
 
   /**
@@ -705,7 +899,9 @@ export class AkiflowClient {
       ...(event.location && { location: event.location }),
     };
 
-    return this.request("PATCH", this.EVENTS_URL, [newEvent]);
+    const result = await this.request<Event[]>("PATCH", this.EVENTS_URL, [newEvent]);
+    await this.mergeV5Items<Event>("events", result, (event) => !!event.deleted_at);
+    return result;
   }
 
   /**
@@ -717,7 +913,9 @@ export class AkiflowClient {
         throw new Error("'id' is required for updating an event");
       }
     }
-    return this.request("PATCH", this.EVENTS_URL, events);
+    const result = await this.request<Event[]>("PATCH", this.EVENTS_URL, events);
+    await this.mergeV5Items<Event>("events", result, (event) => !!event.deleted_at);
+    return result;
   }
 
   /**
@@ -731,17 +929,27 @@ export class AkiflowClient {
    * Get calendars
    */
   async getCalendars(): Promise<{ data: Calendar[] }> {
-    return this.request(
-      "GET",
-      `${this.CALENDARS_URL}?per_page=2500&with_deleted=false`,
-    );
+    return {
+      data: await this.syncV5Collection<Calendar>(
+        "calendars",
+        this.CALENDARS_URL,
+        (calendar) => calendar.deleted_at !== null && calendar.deleted_at !== undefined,
+        { with_deleted: "false" },
+      ),
+    };
   }
 
   /**
    * Get time slots
    */
   async getTimeSlots(): Promise<{ data: TimeSlot[] }> {
-    return this.request("GET", `${this.TIME_SLOTS_URL}?limit=2500`);
+    return {
+      data: await this.syncV5Collection<TimeSlot>(
+        "timeSlots",
+        this.TIME_SLOTS_URL,
+        (slot) => !!slot.deleted_at,
+      ),
+    };
   }
 
   /**
@@ -789,7 +997,9 @@ export class AkiflowClient {
       global_label_id_updated_at: null,
     };
 
-    return this.request("PATCH", this.TIME_SLOTS_URL, [newSlot]);
+    const result = await this.request<TimeSlot[]>("PATCH", this.TIME_SLOTS_URL, [newSlot]);
+    await this.mergeV5Items<TimeSlot>("timeSlots", result, (slot) => !!slot.deleted_at);
+    return result;
   }
 
   /**
@@ -801,7 +1011,9 @@ export class AkiflowClient {
         throw new Error("'id' is required for updating a time slot");
       }
     }
-    return this.request("PATCH", this.TIME_SLOTS_URL, slots);
+    const result = await this.request<TimeSlot[]>("PATCH", this.TIME_SLOTS_URL, slots);
+    await this.mergeV5Items<TimeSlot>("timeSlots", result, (slot) => !!slot.deleted_at);
+    return result;
   }
 
   /**
@@ -824,25 +1036,20 @@ export class AkiflowClient {
   }
 
   async getAllRecordings(): Promise<Recording[]> {
-    const all: Recording[] = [];
-    let cursor: string | undefined;
-    const seen = new Set<string>();
-
-    for (;;) {
-      const response = await this.getRecordings(cursor);
-      const items = response.data ?? [];
-      all.push(...items);
-
-      cursor = response.next_cursor ?? undefined;
-      if (!cursor || seen.has(cursor)) break;
-      seen.add(cursor);
-    }
-
-    return all;
+    return this.refreshAkiCollection<Recording>(
+      "recordings",
+      (cursor) => this.getRecordings(cursor),
+      (recording) => !!recording.deletedAt || !!recording.trashedAt,
+    );
   }
 
   async getRecording(id: string): Promise<{ data: Recording }> {
-    return this.request("GET", `${this.AKI_API_URL}/recordings/${id}`);
+    const response = await this.request<{ data: Recording }>(
+      "GET",
+      `${this.AKI_API_URL}/recordings/${id}`,
+    );
+    await this.mergeAkiItem<Recording>("recordings", response.data);
+    return response;
   }
 
   async getRecordingAudio(id: string): Promise<ArrayBuffer> {
@@ -888,24 +1095,19 @@ export class AkiflowClient {
   }
 
   async getAllMeetingBriefs(): Promise<MeetingBrief[]> {
-    const all: MeetingBrief[] = [];
-    let cursor: string | undefined;
-    const seen = new Set<string>();
-
-    for (;;) {
-      const response = await this.getMeetingBriefs(cursor);
-      const items = response.data ?? [];
-      all.push(...items);
-
-      cursor = response.next_cursor ?? undefined;
-      if (!cursor || seen.has(cursor)) break;
-      seen.add(cursor);
-    }
-
-    return all;
+    return this.refreshAkiCollection<MeetingBrief>(
+      "meetingBriefs",
+      (cursor) => this.getMeetingBriefs(cursor),
+      (brief) => !!brief.deletedAt,
+    );
   }
 
   async getMeetingBrief(id: string): Promise<{ data: MeetingBrief }> {
-    return this.request("GET", `${this.AKI_API_URL}/researches/${id}`);
+    const response = await this.request<{ data: MeetingBrief }>(
+      "GET",
+      `${this.AKI_API_URL}/researches/${id}`,
+    );
+    await this.mergeAkiItem<MeetingBrief>("meetingBriefs", response.data);
+    return response;
   }
 }

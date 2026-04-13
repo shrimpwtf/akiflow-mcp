@@ -13,6 +13,7 @@ MCP server for Akiflow task management with Meeting Assistant support.
 - **Meeting Briefs**: Get pre-meeting research briefs
 - **Action Items → Tasks**: Create Akiflow tasks directly from meeting action items
 - Auto-refreshing authentication
+- Persistent local cache with per-entity sync tokens for faster repeated queries
 
 ## Setup
 
@@ -41,6 +42,12 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
   }
 }
 ```
+
+## Sync Model
+
+- v5 entities (`tasks`, `events`, `tags`, `labels`, `time_slots`, `calendars`) are cached locally and refreshed with per-entity `sync_token`s
+- Meeting Assistant resources (`recordings`, `researches`) are cached separately using cursor-based refreshes
+- Tool queries run against the merged local cache after refresh, so date filtering and sorting happen on a complete local view rather than partial API deltas
 
 ## Available Tools
 

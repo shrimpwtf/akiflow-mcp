@@ -1,7 +1,7 @@
 {
   "name": "@shrimpwtf/mcp-akiflow",
-  "version": "0.2.1",
-  "description": "MCP server for Akiflow task management with Meeting Assistant support",
+  "version": "0.3.0",
+  "description": "MCP server for Akiflow task management with cache-backed sync and Meeting Assistant support",
   "type": "module",
   "bin": {
     "mcp-akiflow": "./build/index.js"
@@ -23,7 +23,9 @@
     "productivity",
     "meeting-notes",
     "meeting-assistant",
-    "transcripts"
+    "transcripts",
+    "sync",
+    "cache"
   ],
   "author": "shrimpwtf",
   "license": "MIT",

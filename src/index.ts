@@ -768,13 +768,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
         if (date_from) {
           tasks = tasks.filter((t: Task) => {
-            const d = (t.date || t.datetime || "").substring(0, 10);
+            const d = (t.date || t.datetime || t.due_date || "").substring(0, 10);
             return d >= date_from;
           });
         }
         if (date_to) {
           tasks = tasks.filter((t: Task) => {
-            const d = (t.date || t.datetime || "").substring(0, 10);
+            const d = (t.date || t.datetime || t.due_date || "").substring(0, 10);
             return d && d <= date_to;
           });
         }
