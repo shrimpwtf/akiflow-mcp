@@ -351,6 +351,13 @@ interface V5SyncResponse<T> {
   has_next_page?: boolean;
 }
 
+interface V5MutationResponse<T> {
+  success?: boolean;
+  message?: string | null;
+  data?: T[];
+  failed?: unknown[];
+}
+
 export class AkiflowClient {
   private refreshToken: string;
   private accessToken: string = "";
@@ -458,6 +465,13 @@ export class AkiflowClient {
       }
       throw error;
     }
+  }
+
+  private extractV5MutationItems<T>(response: V5MutationResponse<T> | T[]): T[] {
+    if (Array.isArray(response)) {
+      return response;
+    }
+    return response.data ?? [];
   }
 
   private async syncV5Collection<T extends { id?: string }>(
@@ -714,7 +728,12 @@ export class AkiflowClient {
       ...(task.listId && { listId: task.listId }),
     };
 
-    const result = await this.request<Task[]>("PATCH", this.TASKS_URL, [newTask]);
+    const response = await this.request<V5MutationResponse<Task>>(
+      "PATCH",
+      this.TASKS_URL,
+      [newTask],
+    );
+    const result = this.extractV5MutationItems(response);
     await this.mergeV5Items<Task>(
       "tasks",
       result,
@@ -733,7 +752,12 @@ export class AkiflowClient {
       }
       this.validateTask(task);
     }
-    const result = await this.request<Task[]>("PATCH", this.TASKS_URL, tasks);
+    const response = await this.request<V5MutationResponse<Task>>(
+      "PATCH",
+      this.TASKS_URL,
+      tasks,
+    );
+    const result = this.extractV5MutationItems(response);
     await this.mergeV5Items<Task>(
       "tasks",
       result,
@@ -899,7 +923,12 @@ export class AkiflowClient {
       ...(event.location && { location: event.location }),
     };
 
-    const result = await this.request<Event[]>("PATCH", this.EVENTS_URL, [newEvent]);
+    const response = await this.request<V5MutationResponse<Event>>(
+      "PATCH",
+      this.EVENTS_URL,
+      [newEvent],
+    );
+    const result = this.extractV5MutationItems(response);
     await this.mergeV5Items<Event>("events", result, (event) => !!event.deleted_at);
     return result;
   }
@@ -913,7 +942,12 @@ export class AkiflowClient {
         throw new Error("'id' is required for updating an event");
       }
     }
-    const result = await this.request<Event[]>("PATCH", this.EVENTS_URL, events);
+    const response = await this.request<V5MutationResponse<Event>>(
+      "PATCH",
+      this.EVENTS_URL,
+      events,
+    );
+    const result = this.extractV5MutationItems(response);
     await this.mergeV5Items<Event>("events", result, (event) => !!event.deleted_at);
     return result;
   }
@@ -997,7 +1031,12 @@ export class AkiflowClient {
       global_label_id_updated_at: null,
     };
 
-    const result = await this.request<TimeSlot[]>("PATCH", this.TIME_SLOTS_URL, [newSlot]);
+    const response = await this.request<V5MutationResponse<TimeSlot>>(
+      "PATCH",
+      this.TIME_SLOTS_URL,
+      [newSlot],
+    );
+    const result = this.extractV5MutationItems(response);
     await this.mergeV5Items<TimeSlot>("timeSlots", result, (slot) => !!slot.deleted_at);
     return result;
   }
@@ -1011,7 +1050,12 @@ export class AkiflowClient {
         throw new Error("'id' is required for updating a time slot");
       }
     }
-    const result = await this.request<TimeSlot[]>("PATCH", this.TIME_SLOTS_URL, slots);
+    const response = await this.request<V5MutationResponse<TimeSlot>>(
+      "PATCH",
+      this.TIME_SLOTS_URL,
+      slots,
+    );
+    const result = this.extractV5MutationItems(response);
     await this.mergeV5Items<TimeSlot>("timeSlots", result, (slot) => !!slot.deleted_at);
     return result;
   }
